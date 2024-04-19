@@ -2,7 +2,7 @@ name: Turtle Tests
 
 on:
   schedule:
-    - cron: '0 2 * * 6' # Every Saturday at 2am UTC
+    - cron: '0 2 * * *' # Every day at 2am UTC
 
 jobs:
   test:
@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        example: [cloudbalancing, conferencescheduling, curriculumcourse, examination, flightcrewscheduling, machinereassignment, meetingscheduling, nurserostering, pas, projectjobscheduling, taskassigning, tennis, travelingtournament, tsp, vehiclerouting]
+        example: [cloudbalancing, conferencescheduling, curriculumcourse, examination, machinereassignment, meetingscheduling, nurserostering, pas, taskassigning, travelingtournament, tsp, vehiclerouting]
     steps:
       # Clone timefold-solver
       - name: Checkout timefold-solver
