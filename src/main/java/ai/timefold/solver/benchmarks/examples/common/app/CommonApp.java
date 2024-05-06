@@ -7,8 +7,8 @@ import java.util.Set;
 
 import ai.timefold.solver.benchmarks.examples.common.persistence.AbstractSolutionImporter;
 import ai.timefold.solver.core.api.domain.solution.PlanningSolution;
-import ai.timefold.solver.core.api.solver.SolverConfigOverride;
 import ai.timefold.solver.core.api.solver.SolverFactory;
+import ai.timefold.solver.core.config.solver.SolverConfig;
 import ai.timefold.solver.core.config.solver.termination.TerminationConfig;
 import ai.timefold.solver.persistence.common.api.domain.solution.SolutionFileIO;
 
@@ -125,16 +125,20 @@ public abstract class CommonApp<Solution_> extends LoggingMain {
     }
 
     public final Solution_ solve(String datasetName) {
-        return solve(datasetName, 1L);
+        return solve(datasetName, 1L, -1);
     }
 
-    public final Solution_ solve(String datasetName, long minutesSpentLimit) {
+    public final Solution_ solve(String datasetName, long minutesSpentLimit, int moveThreadCount) {
         var solutionFileIo = createSolutionFileIO();
         var solution = solutionFileIo.read(Path.of("data", dataDirName, "unsolved", datasetName).toFile().getAbsoluteFile());
-        var solverFactory = SolverFactory.<Solution_> createFromXmlResource(solverConfigResource);
-        var solver = solverFactory.buildSolver(new SolverConfigOverride<Solution_>()
+        var solverConfig = SolverConfig.createFromXmlResource(solverConfigResource)
                 .withTerminationConfig(new TerminationConfig()
-                        .withMinutesSpentLimit(minutesSpentLimit)));
+                .withMinutesSpentLimit(minutesSpentLimit));
+        if (moveThreadCount > 1) {
+            solverConfig.setMoveThreadCount(Integer.toString(moveThreadCount));
+        }
+        var solverFactory = SolverFactory.<Solution_>create(solverConfig);
+        var solver = solverFactory.buildSolver();
         return solver.solve(solution);
     }
 
