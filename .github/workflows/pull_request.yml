@@ -103,8 +103,6 @@ jobs:
       - name: Checkout timefold-solver-benchmarks
         uses: actions/checkout@v4
         with:
-          repository: TimefoldAI/timefold-solver-benchmarks
-          ref: ${{ github.head_ref }}
           path: ./timefold-solver-benchmarks
       - name: Build and test timefold-solver-benchmarks
         working-directory: ./timefold-solver-benchmarks
