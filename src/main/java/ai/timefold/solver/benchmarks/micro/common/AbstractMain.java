@@ -38,6 +38,7 @@ import java.nio.file.Path;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.util.Arrays;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Properties;
 
@@ -58,7 +59,9 @@ public abstract class AbstractMain<C extends AbstractConfiguration> {
 
     protected AbstractMain(String subpackage) {
         this.subpackage = subpackage;
-        this.resultsDirectory = Path.of("results", subpackage, getTimestamp());
+        var runId = Objects.requireNonNullElse(System.getenv("RUN_ID"), getTimestamp())
+                .strip();
+        this.resultsDirectory = Path.of("results", subpackage, runId);
         resultsDirectory.toFile().mkdirs();
     }
 
@@ -175,9 +178,9 @@ public abstract class AbstractMain<C extends AbstractConfiguration> {
                 .forks(configuration.getForkCount())
                 .warmupIterations(configuration.getWarmupIterations())
                 .measurementIterations(configuration.getMeasurementIterations())
-                .jvmArgs("-XX:+UseParallelGC", "-Xms1g", "-Xmx1g") // Minimize GC overhead.
-                .result(resultsDirectory.resolve("benchmarkResults.csv").toAbsolutePath().toString())
-                .resultFormat(ResultFormatType.CSV)
+                .jvmArgs("-XX:+UseParallelGC", "-Xmx2g") // Stable, predictable GC pause times.
+                .result(resultsDirectory.resolve("results.json").toAbsolutePath().toString())
+                .resultFormat(ResultFormatType.JSON)
                 .shouldDoGC(true);
     }
 

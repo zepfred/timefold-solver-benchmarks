@@ -38,7 +38,6 @@ import ai.timefold.solver.benchmarks.micro.coldstart.jmh.TimeToFirstScoreBenchma
 import ai.timefold.solver.benchmarks.micro.coldstart.jmh.TimeToSolverFactoryBenchmark;
 import ai.timefold.solver.benchmarks.micro.common.AbstractMain;
 
-import org.openjdk.jmh.results.Result;
 import org.openjdk.jmh.runner.Runner;
 import org.openjdk.jmh.runner.RunnerException;
 import org.openjdk.jmh.runner.options.ChainedOptionsBuilder;
@@ -76,7 +75,7 @@ public final class Main extends AbstractMain<Configuration> {
         var relativeScoreErrorThreshold = configuration.getRelativeScoreErrorThreshold();
         var thresholdForPrint = ((int) Math.round(relativeScoreErrorThreshold * 10_000)) / 100.0D;
         runResults.forEach(result -> {
-            Result<?> primaryResult = result.getPrimaryResult();
+            var primaryResult = result.getPrimaryResult();
             var score = primaryResult.getScore();
             var scoreError = primaryResult.getScoreError();
             var relativeScoreError = scoreError / score;
