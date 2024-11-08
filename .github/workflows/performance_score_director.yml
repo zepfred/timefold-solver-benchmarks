@@ -34,7 +34,7 @@ on:
 jobs:
 
   benchmark:
-    runs-on: perf-linux-x64-2cores
+    runs-on: self-hosted
     strategy:
       fail-fast: false # Jobs fail if the benchmark error is over predefined thresholds; other benchmarks continue.
       matrix:
