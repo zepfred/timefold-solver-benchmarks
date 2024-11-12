@@ -109,8 +109,10 @@ public abstract class AbstractMain<C extends AbstractConfiguration> {
                                     "output=jfr;" +
                                     "dir=" + resultsDirectory.toAbsolutePath() + ";" +
                                     "libPath=" + asyncProfilerPath);
-                })
-                .orElseThrow(() -> new IllegalStateException("Impossible state: Async profiler not found."));
+                }).orElseGet(() -> {
+                    LOGGER.warn("Async profiler not found.");
+                    return options;
+                });
     }
 
     protected void convertJfrToFlameGraphs() {
@@ -178,7 +180,7 @@ public abstract class AbstractMain<C extends AbstractConfiguration> {
                 .forks(configuration.getForkCount())
                 .warmupIterations(configuration.getWarmupIterations())
                 .measurementIterations(configuration.getMeasurementIterations())
-                .jvmArgs("-XX:+UseSerialGC", "-Xmx2g") // Throughput-focused GC.
+                .jvmArgs("-XX:+UseParallelGC", "-Xmx2g") // Throughput-focused GC.
                 .result(resultsDirectory.resolve("results.json").toAbsolutePath().toString())
                 .resultFormat(ResultFormatType.JSON)
                 .shouldDoGC(true);
