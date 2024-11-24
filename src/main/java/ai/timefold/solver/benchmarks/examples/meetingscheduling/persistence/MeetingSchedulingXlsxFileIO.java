@@ -14,11 +14,14 @@ import java.time.LocalTime;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.HashSet;
+import java.util.Collection;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.SortedMap;
+import java.util.TreeMap;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Function;
 import java.util.function.LongFunction;
@@ -126,8 +129,7 @@ public class MeetingSchedulingXlsxFileIO extends AbstractXlsxSolutionFileIO<Meet
         }
 
         private void readMeetingList() {
-            Map<String, Person> personMap = solution.getPersonList().stream().collect(
-                    toMap(Person::getFullName, person -> person));
+            Map<String, Person> personMap = toSortedMap(solution.getPersonList(), Person::getFullName, person -> person);
             nextSheet("Meetings");
             nextRow(false);
             readHeaderCell("Topic");
@@ -141,29 +143,20 @@ public class MeetingSchedulingXlsxFileIO extends AbstractXlsxSolutionFileIO<Meet
             readHeaderCell("Starting time");
             readHeaderCell("Room");
 
-            List<Meeting> meetingList =
-                    new ArrayList<>(currentSheet.getLastRowNum() - 1);
+            List<Meeting> meetingList = new ArrayList<>(currentSheet.getLastRowNum() - 1);
             List<MeetingAssignment> meetingAssignmentList = new ArrayList<>(currentSheet.getLastRowNum() - 1);
-            List<Attendance> attendanceList =
-                    new ArrayList<>(currentSheet.getLastRowNum() - 1);
+            List<Attendance> attendanceList = new ArrayList<>(currentSheet.getLastRowNum() - 1);
             AtomicLong attendanceIdCounter = new AtomicLong();
             long meetingId = 0L;
             long meetingAssignmentId = 0L;
             Map<LocalDateTime, TimeGrain> timeGrainMap =
-                    solution.getTimeGrainList().stream().collect(
-                            toMap(TimeGrain::getDateTime,
-                                    Function.identity()));
-            Map<String, Room> roomMap =
-                    solution.getRoomList().stream().collect(
-                            toMap(Room::getName,
-                                    Function.identity()));
+                    toSortedMap(solution.getTimeGrainList(), TimeGrain::getDateTime, Function.identity());
+            Map<String, Room> roomMap = toSortedMap(solution.getRoomList(), Room::getName, Function.identity());
 
             while (nextRow()) {
-                Meeting meeting =
-                        new Meeting(meetingId++);
-                List<Attendance> speakerAttendanceList =
-                        new ArrayList<>();
-                Set<Person> speakerSet = new HashSet<>();
+                Meeting meeting = new Meeting(meetingId++);
+                List<Attendance> speakerAttendanceList = new ArrayList<>();
+                Set<Person> speakerSet = new LinkedHashSet<>();
                 MeetingAssignment meetingAssignment = new MeetingAssignment(meetingAssignmentId++);
 
                 meeting.setTopic(nextStringCell().getStringCellValue());
@@ -173,13 +166,10 @@ public class MeetingSchedulingXlsxFileIO extends AbstractXlsxSolutionFileIO<Meet
                 meeting.setContent(nextStringCell().getStringCellValue());
 
                 if (meeting.isEntireGroupMeeting()) {
-                    List<RequiredAttendance> requiredAttendanceList =
-                            new ArrayList<>(solution.getPersonList().size());
+                    List<RequiredAttendance> requiredAttendanceList = new ArrayList<>(solution.getPersonList().size());
                     for (Person person : solution.getPersonList()) {
-                        RequiredAttendance requiredAttendance =
-                                createAttendance(attendanceIdCounter,
-                                        id -> new RequiredAttendance(
-                                                id, meeting));
+                        RequiredAttendance requiredAttendance = createAttendance(attendanceIdCounter,
+                                id -> new RequiredAttendance(id, meeting));
                         requiredAttendance.setPerson(person);
                         requiredAttendanceList.add(requiredAttendance);
                         attendanceList.add(requiredAttendance);
@@ -203,9 +193,13 @@ public class MeetingSchedulingXlsxFileIO extends AbstractXlsxSolutionFileIO<Meet
             solution.setAttendanceList(attendanceList);
         }
 
-        private void readSpeakerList(Map<String, Person> personMap,
-                Meeting meeting,
-                List<Attendance> speakerAttendanceList,
+        private static <A, K extends Comparable<K>, K2 extends K, V> SortedMap<K2, V> toSortedMap(Collection<A> collection,
+                Function<A, K2> keyFunction, Function<A, V> valueFunction) {
+            return collection.stream()
+                    .collect(toMap(keyFunction, valueFunction, (a, b) -> a, TreeMap::new));
+        }
+
+        private void readSpeakerList(Map<String, Person> personMap, Meeting meeting, List<Attendance> speakerAttendanceList,
                 Set<Person> speakerSet, AtomicLong attendanceIdCounter) {
             meeting.setSpeakerList(Arrays.stream(nextStringCell().getStringCellValue().split(", "))
                     .filter(speaker -> !speaker.isEmpty())
@@ -257,12 +251,10 @@ public class MeetingSchedulingXlsxFileIO extends AbstractXlsxSolutionFileIO<Meet
                     / TimeGrain.GRAIN_LENGTH_IN_MINUTES);
         }
 
-        private List<Attendance> getAttendanceLists(
-                Meeting meeting, Map<String, Person> personMap,
-                Set<Person> speakerSet,
+        private List<Attendance> getAttendanceLists(Meeting meeting, Map<String, Person> personMap, Set<Person> speakerSet,
                 AtomicLong attendanceIdCounter) {
             List<Attendance> attendanceList = new ArrayList<>(currentSheet.getLastRowNum() - 1);
-            Set<Person> requiredPersonSet = new HashSet<>();
+            Set<Person> requiredPersonSet = new LinkedHashSet<>();
 
             List<RequiredAttendance> requiredAttendanceList =
                     getRequiredAttendanceList(meeting, personMap, speakerSet, requiredPersonSet, attendanceIdCounter);
@@ -277,10 +269,8 @@ public class MeetingSchedulingXlsxFileIO extends AbstractXlsxSolutionFileIO<Meet
             return attendanceList;
         }
 
-        private List<RequiredAttendance>
-                getRequiredAttendanceList(Meeting meeting,
-                        Map<String, Person> personMap,
-                        Set<Person> speakerSet, Set<Person> requiredPersonSet, AtomicLong attendanceIdCounter) {
+        private List<RequiredAttendance> getRequiredAttendanceList(Meeting meeting, Map<String, Person> personMap,
+                Set<Person> speakerSet, Set<Person> requiredPersonSet, AtomicLong attendanceIdCounter) {
             return Arrays.stream(nextStringCell().getStringCellValue().split(", "))
                     .filter(requiredAttendee -> !requiredAttendee.isEmpty())
                     .map(personName -> {
@@ -311,11 +301,9 @@ public class MeetingSchedulingXlsxFileIO extends AbstractXlsxSolutionFileIO<Meet
                     .collect(toList());
         }
 
-        private List<PreferredAttendance>
-                getPreferredAttendanceList(Meeting meeting,
-                        Map<String, Person> personMap,
-                        Set<Person> speakerSet, Set<Person> requiredPersonSet, AtomicLong attendanceIdCounter) {
-            Set<Person> preferredPersonSet = new HashSet<>();
+        private List<PreferredAttendance> getPreferredAttendanceList(Meeting meeting, Map<String, Person> personMap,
+                Set<Person> speakerSet, Set<Person> requiredPersonSet, AtomicLong attendanceIdCounter) {
+            Set<Person> preferredPersonSet = new LinkedHashSet<>();
             return Arrays.stream(nextStringCell().getStringCellValue().split(", "))
                     .filter(preferredAttendee -> !preferredAttendee.isEmpty())
                     .map(personName -> {

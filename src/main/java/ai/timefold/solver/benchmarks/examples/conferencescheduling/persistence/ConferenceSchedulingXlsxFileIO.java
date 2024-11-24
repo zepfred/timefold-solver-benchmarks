@@ -52,14 +52,17 @@ import java.time.LocalTime;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Comparator;
-import java.util.HashMap;
-import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.SortedMap;
+import java.util.TreeMap;
+import java.util.TreeSet;
 import java.util.function.Function;
 
 import ai.timefold.solver.benchmarks.examples.common.persistence.AbstractXlsxSolutionFileIO;
@@ -113,11 +116,6 @@ public class ConferenceSchedulingXlsxFileIO extends
     private static final String TALK_PROHIBITED_ROOM_TAGS_DESCRIPTION =
             "Penalty per prohibited tag in a talk's room, per minute";
 
-    private static final String PUBLISHED_TIMESLOT_DESCRIPTION =
-            "Penalty per published talk with a different timeslot than its published timeslot, per match";
-
-    private static final String PUBLISHED_ROOM_DESCRIPTION =
-            "Penalty per published talk with a different room than its published room, per match";
     private static final String THEME_TRACK_CONFLICT_DESCRIPTION =
             "Penalty per common theme track of 2 talks with overlapping timeslots, per overlapping minute";
     private static final String THEME_TRACK_ROOM_STABILITY_DESCRIPTION =
@@ -157,10 +155,8 @@ public class ConferenceSchedulingXlsxFileIO extends
             "Penalty per missing preferred tag in a talk's room, per minute";
     private static final String TALK_UNDESIRED_ROOM_TAGS_DESCRIPTION = "Penalty per undesired tag in a talk's room, per minute";
 
-    private static final Comparator<Timeslot> COMPARATOR =
-            comparing(Timeslot::getStartDateTime)
-                    .thenComparing(reverseOrder(comparing(
-                            Timeslot::getEndDateTime)));
+    private static final Comparator<Timeslot> COMPARATOR = comparing(Timeslot::getStartDateTime)
+            .thenComparing(reverseOrder(comparing(Timeslot::getEndDateTime)));
 
     private final boolean strict;
 
@@ -199,10 +195,10 @@ public class ConferenceSchedulingXlsxFileIO extends
         @Override
         public ConferenceSolution read() {
             solution = new ConferenceSolution();
-            totalTalkTypeMap = new HashMap<>();
-            totalTimeslotTagSet = new HashSet<>();
-            totalRoomTagSet = new HashSet<>();
-            totalTalkCodeMap = new HashMap<>();
+            totalTalkTypeMap = new TreeMap<>();
+            totalTimeslotTagSet = new TreeSet<>();
+            totalRoomTagSet = new TreeSet<>();
+            totalTalkCodeMap = new TreeMap<>();
             readConfiguration();
             readTimeslotList();
             readRoomList();
@@ -286,17 +282,15 @@ public class ConferenceSchedulingXlsxFileIO extends
             readHeaderCell("Talk types");
             readHeaderCell("Tags");
             List<TalkType> talkTypeList = new ArrayList<>();
-            List<Timeslot> timeslotList =
-                    new ArrayList<>(currentSheet.getLastRowNum() - 1);
+            List<Timeslot> timeslotList = new ArrayList<>(currentSheet.getLastRowNum() - 1);
             var id = 0L;
             var talkTypeId = 0L;
             while (nextRow()) {
-                var timeslot =
-                        new Timeslot(id++);
+                var timeslot = new Timeslot(id++);
                 var day = LocalDate.parse(nextStringCell().getStringCellValue(), DAY_FORMATTER);
                 var startTime = LocalTime.parse(nextStringCell().getStringCellValue(), TIME_FORMATTER);
                 var endTime = LocalTime.parse(nextStringCell().getStringCellValue(), TIME_FORMATTER);
-                if (startTime.compareTo(endTime) >= 0) {
+                if (!startTime.isBefore(endTime)) {
                     throw new IllegalStateException(currentPosition() + ": The startTime (" + startTime
                             + ") must be less than the endTime (" + endTime + ").");
                 }
@@ -359,12 +353,10 @@ public class ConferenceSchedulingXlsxFileIO extends
             readHeaderCell("Talk types");
             readHeaderCell("Tags");
             readTimeslotHoursHeaders();
-            List<Room> roomList =
-                    new ArrayList<>(currentSheet.getLastRowNum() - 1);
+            List<Room> roomList = new ArrayList<>(currentSheet.getLastRowNum() - 1);
             var id = 0L;
             while (nextRow()) {
-                var room =
-                        new Room(id++);
+                var room = new Room(id++);
                 room.setName(nextStringCell().getStringCellValue());
                 if (strict && !VALID_NAME_PATTERN.matcher(room.getName()).matches()) {
                     throw new IllegalStateException(currentPosition() + ": The room name (" + room.getName()
@@ -402,10 +394,8 @@ public class ConferenceSchedulingXlsxFileIO extends
                     }
                 }
                 totalRoomTagSet.addAll(room.getTagSet());
-                Set<Timeslot> unavailableTimeslotSet =
-                        new LinkedHashSet<>();
-                for (var timeslot : solution
-                        .getTimeslotList()) {
+                Set<Timeslot> unavailableTimeslotSet = new LinkedHashSet<>();
+                for (var timeslot : solution.getTimeslotList()) {
                     var cell = nextStringCell();
                     if (Objects.equals(extractColor(cell, UNAVAILABLE_COLOR), UNAVAILABLE_COLOR)) {
                         unavailableTimeslotSet.add(timeslot);
@@ -446,12 +436,10 @@ public class ConferenceSchedulingXlsxFileIO extends
             readHeaderCell("Undesired room tags");
 
             readTimeslotHoursHeaders();
-            List<Speaker> speakerList =
-                    new ArrayList<>(currentSheet.getLastRowNum() - 1);
+            List<Speaker> speakerList = new ArrayList<>(currentSheet.getLastRowNum() - 1);
             var id = 0L;
             while (nextRow()) {
-                var speaker =
-                        new Speaker(id++);
+                var speaker = new Speaker(id++);
                 speaker.setName(nextStringCell().getStringCellValue());
                 if (strict && !VALID_NAME_PATTERN.matcher(speaker.getName()).matches()) {
                     throw new IllegalStateException(currentPosition() + ": The speaker name (" + speaker.getName()
@@ -481,10 +469,8 @@ public class ConferenceSchedulingXlsxFileIO extends
                 speaker.setUndesiredRoomTagSet(Arrays.stream(nextStringCell().getStringCellValue().split(", "))
                         .filter(tag -> !tag.isEmpty()).collect(toCollection(LinkedHashSet::new)));
                 verifyRoomTags(speaker.getUndesiredRoomTagSet());
-                Set<Timeslot> unavailableTimeslotSet =
-                        new LinkedHashSet<>();
-                for (var timeslot : solution
-                        .getTimeslotList()) {
+                Set<Timeslot> unavailableTimeslotSet = new LinkedHashSet<>();
+                for (var timeslot : solution.getTimeslotList()) {
                     var cell = nextStringCell();
                     if (Objects.equals(extractColor(cell, UNAVAILABLE_COLOR), UNAVAILABLE_COLOR)) {
                         unavailableTimeslotSet.add(timeslot);
@@ -501,10 +487,7 @@ public class ConferenceSchedulingXlsxFileIO extends
         }
 
         private void readTalkList() {
-            var speakerMap =
-                    solution.getSpeakerList().stream().collect(
-                            toMap(Speaker::getName,
-                                    speaker -> speaker));
+            var speakerMap = toSortedMap(solution.getSpeakerList(), Speaker::getName, speaker -> speaker);
             nextSheet("Talks");
             nextRow(false);
             readHeaderCell("Code");
@@ -538,25 +521,17 @@ public class ConferenceSchedulingXlsxFileIO extends
             readHeaderCell("Published Start");
             readHeaderCell("Published End");
             readHeaderCell("Published Room");
-            List<Talk> talkList =
-                    new ArrayList<>(currentSheet.getLastRowNum() - 1);
+            List<Talk> talkList = new ArrayList<>(currentSheet.getLastRowNum() - 1);
             var id = 0L;
-            var timeslotMap =
-                    solution.getTimeslotList().stream().collect(
-                            toMap(timeslot -> {
-                                var key = timeslot.getStartDateTime();
-                                return new Pair<>(key, timeslot.getEndDateTime());
-                            },
-                                    Function.identity()));
-            var roomMap =
-                    solution.getRoomList().stream().collect(
-                            toMap(Room::getName,
-                                    Function.identity()));
-            Map<Talk, Set<String>> talkToPrerequisiteTalkSetMap =
-                    new HashMap<>();
+            var timeslotMap = solution.getTimeslotList().stream().collect(
+                    toMap(timeslot -> {
+                        var key = timeslot.getStartDateTime();
+                        return new Pair<>(key, timeslot.getEndDateTime());
+                    }, Function.identity(), (a, b) -> a, LinkedHashMap::new));
+            var roomMap = toSortedMap(solution.getRoomList(), Room::getName, Function.identity());
+            Map<Talk, Set<String>> talkToPrerequisiteTalkSetMap = new LinkedHashMap<>();
             while (nextRow()) {
-                var talk =
-                        new Talk(id++);
+                var talk = new Talk(id++);
                 talk.setCode(nextStringCell().getStringCellValue());
                 totalTalkCodeMap.put(talk.getCode(), talk);
                 if (strict && !VALID_CODE_PATTERN.matcher(talk.getCode()).matches()) {
@@ -662,9 +637,13 @@ public class ConferenceSchedulingXlsxFileIO extends
             solution.setTalkList(talkList);
         }
 
-        private Timeslot extractTimeslot(
-                Map<Pair<LocalDateTime, LocalDateTime>, Timeslot> timeslotMap,
-                Talk talk) {
+        private static <A, K extends Comparable<K>, K2 extends K, V> SortedMap<K2, V> toSortedMap(Collection<A> collection,
+                Function<A, K2> keyFunction, Function<A, V> valueFunction) {
+            return collection.stream()
+                    .collect(toMap(keyFunction, valueFunction, (a, b) -> a, TreeMap::new));
+        }
+
+        private Timeslot extractTimeslot(Map<Pair<LocalDateTime, LocalDateTime>, Timeslot> timeslotMap, Talk talk) {
             Timeslot assignedTimeslot;
             var dateString = nextStringCell().getStringCellValue();
             var startTimeString = nextStringCell().getStringCellValue();
@@ -698,9 +677,7 @@ public class ConferenceSchedulingXlsxFileIO extends
             return null;
         }
 
-        private Room extractRoom(
-                Map<String, Room> roomMap,
-                Talk talk) {
+        private Room extractRoom(Map<String, Room> roomMap, Talk talk) {
             var roomName = nextStringCell().getStringCellValue();
             if (!roomName.isEmpty()) {
                 var room = roomMap.get(roomName);
@@ -753,13 +730,10 @@ public class ConferenceSchedulingXlsxFileIO extends
             }
         }
 
-        private void setPrerequisiteTalkSets(
-                Map<Talk, Set<String>> talkToPrerequisiteTalkSetMap) {
-            for (var entry : talkToPrerequisiteTalkSetMap
-                    .entrySet()) {
+        private void setPrerequisiteTalkSets(Map<Talk, Set<String>> talkToPrerequisiteTalkSetMap) {
+            for (var entry : talkToPrerequisiteTalkSetMap.entrySet()) {
                 var currentTalk = entry.getKey();
-                Set<Talk> prerequisiteTalkSet =
-                        new HashSet<>();
+                Set<Talk> prerequisiteTalkSet = new LinkedHashSet<>();
                 for (var prerequisiteTalkCode : entry.getValue()) {
                     var prerequisiteTalk = totalTalkCodeMap.get(prerequisiteTalkCode);
                     if (prerequisiteTalk == null) {
@@ -775,8 +749,7 @@ public class ConferenceSchedulingXlsxFileIO extends
 
         private void readTimeslotDaysHeaders() {
             LocalDate previousTimeslotDay = null;
-            for (var timeslot : solution
-                    .getTimeslotList()) {
+            for (var timeslot : solution.getTimeslotList()) {
                 var timeslotDay = timeslot.getDate();
                 if (timeslotDay.equals(previousTimeslotDay)) {
                     readHeaderCell("");
