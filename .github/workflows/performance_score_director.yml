@@ -1,10 +1,8 @@
-# - Runs entirely on a single machine.
+# - Runs entirely on a single machine, a self-hosted runner on Github Actions.
 # - The baseline is established first, then the branch under test is measured.
 # - Each benchmark gives a 99.9 % confidence interval.
 # - The confidence intervals are compared to determine if the branch under test is a regression or an improvement.
-# - The error threshold is expected to be below +/- 2.5 %.
-#   We have yet to see an error of over +/- 4 %.
-#   With the error so high, the impact is that small regressions are not considered statistically significant.
+# - The error threshold is expected to be below +/- 2.0 %.
 name: Performance Regression Test - Score Director
 
 on:
@@ -38,7 +36,9 @@ jobs:
     strategy:
       fail-fast: false # Jobs fail if the benchmark error is over predefined thresholds; other benchmarks continue.
       matrix:
-        example: [cloud_balancing, conference_scheduling, curriculum_course, examination, machine_reassignment, meeting_scheduling, nurse_rostering, patient_admission_scheduling, task_assigning, traveling_tournament, tsp, vehicle_routing]
+        # Meeting Scheduling and Vehicle Routing run longer than the other benchmarks (due to setup costs).
+        # In the interest of fair CPU use distribution across all the benchmarks, we let them run first.
+        example: [meeting_scheduling, vehicle_routing, cloud_balancing, conference_scheduling, curriculum_course, examination, machine_reassignment, nurse_rostering, patient_admission_scheduling, task_assigning, traveling_tournament, tsp]
     env:
       MVN_USERNAME: '${{ secrets.JFROG_ENTERPRISE_READ_ONLY_ACCESS_USERNAME }}'
       MVN_PASSWORD: '${{ secrets.JFROG_ENTERPRISE_READ_ONLY_ACCESS_TOKEN }}'
@@ -72,9 +72,9 @@ jobs:
         working-directory: ./timefold-solver-benchmarks
         shell: bash
         run: |
-          echo "forks=20" > scoredirector-benchmark.properties
-          echo "warmup_iterations=10" >> scoredirector-benchmark.properties
-          echo "measurement_iterations=10" >> scoredirector-benchmark.properties
+          echo "forks=10" > scoredirector-benchmark.properties
+          echo "warmup_iterations=5" >> scoredirector-benchmark.properties
+          echo "measurement_iterations=5" >> scoredirector-benchmark.properties
           echo "relative_score_error_threshold=0.02" >> scoredirector-benchmark.properties
           echo "score_director_type=cs" >> scoredirector-benchmark.properties
           echo "example=${{ matrix.example }}" >> scoredirector-benchmark.properties
@@ -169,6 +169,8 @@ jobs:
           NEW_RANGE_END:   ${{ steps.benchmark_new.outputs.RANGE_END }}
         shell: bash
         run: |
+          export OLD_DEV=$(echo "scale=2; ($OLD_RANGE_MID / $OLD_RANGE_START) * 100 - 100" | bc)
+          export NEW_DEV=$(echo "scale=2; ($NEW_RANGE_MID / $NEW_RANGE_START) * 100 - 100" | bc)
           export DIFF_START=$(echo "scale=2; ($OLD_RANGE_START / $NEW_RANGE_START) * 100" | bc)
           export DIFF_MID=$(echo "scale=2; ($OLD_RANGE_MID / $NEW_RANGE_MID) * 100" | bc)
           export DIFF_END=$(echo "scale=2; ($OLD_RANGE_END / $NEW_RANGE_END) * 100" | bc)
@@ -195,15 +197,15 @@ jobs:
             fi
           fi          
           
-          echo "|        |   **Ref**   |      **Min**      |      **Mean**     |      **Max**      |" >> $GITHUB_STEP_SUMMARY
-          echo "|:------:|:-----------:|:-----------------:|:-----------------:|:-----------------:|" >> $GITHUB_STEP_SUMMARY
-          echo "|  _Old_ | [v${{ github.event.inputs.baseline }}](https://github.com/TimefoldAI/timefold-solver/releases/tag/v${{ github.event.inputs.baseline }}) | ${OLD_RANGE_START} | ${OLD_RANGE_MID} | ${OLD_RANGE_END} |" >> $GITHUB_STEP_SUMMARY
-          echo "|  _New_ | [${{ github.event.inputs.branch_owner }}'s ${{ github.event.inputs.branch }}](https://github.com/${{ github.event.inputs.branch_owner }}/timefold-solver/tree/${{ github.event.inputs.branch }}) | ${NEW_RANGE_START} | ${NEW_RANGE_MID} | ${NEW_RANGE_END} |" >> $GITHUB_STEP_SUMMARY
-          echo "| _Diff_ |             |  ${DIFF_START} %  |   ${DIFF_MID} %   |   ${DIFF_END} %   |" >> $GITHUB_STEP_SUMMARY
+          echo "|        |   **Ref**   |      **Mean**     |" >> $GITHUB_STEP_SUMMARY
+          echo "|:------:|:-----------:|:-----------------:|" >> $GITHUB_STEP_SUMMARY
+          echo "|  _Old_ | [v${{ github.event.inputs.baseline }}](https://github.com/TimefoldAI/timefold-solver/releases/tag/v${{ github.event.inputs.baseline }}) | ${OLD_RANGE_MID} ± ${OLD_DEV} % |" >> $GITHUB_STEP_SUMMARY
+          echo "|  _New_ | [${{ github.event.inputs.branch_owner }}'s ${{ github.event.inputs.branch }}](https://github.com/${{ github.event.inputs.branch_owner }}/timefold-solver/tree/${{ github.event.inputs.branch }}) | ${NEW_RANGE_MID} ± ${NEW_DEV} % |" >> $GITHUB_STEP_SUMMARY
+          echo "| _Diff_ |             |   ${DIFF_MID} %   |" >> $GITHUB_STEP_SUMMARY
           
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Min and max define a 99.9 % confidence interval." >> $GITHUB_STEP_SUMMARY
-          echo "Min and max are in operations per second. Higher is better." >> $GITHUB_STEP_SUMMARY
+          echo "Mean is in operations per second. Higher is better." >> $GITHUB_STEP_SUMMARY
+          echo "Mean ± X % describes a 99.9 % confidence interval." >> $GITHUB_STEP_SUMMARY
           echo "Diff under 100 % represents an improvement, over 100 % a regression." >> $GITHUB_STEP_SUMMARY
           
           if [ "$FAIL" = true ]; then
