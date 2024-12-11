@@ -15,7 +15,7 @@ import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 public class RoadLocation extends Location {
 
     // Prefer Map over array or List because customers might be added and removed in real-time planning.
-    protected Map<RoadLocation, Double> travelDistanceMap;
+    protected Map<RoadLocation, Long> travelDistanceMap;
 
     public RoadLocation() {
     }
@@ -29,13 +29,12 @@ public class RoadLocation extends Location {
     }
 
     @JsonSerialize(keyUsing = KeySerializer.class)
-    @JsonDeserialize(
-            keyUsing = RoadLocationKeyDeserializer.class)
-    public Map<RoadLocation, Double> getTravelDistanceMap() {
+    @JsonDeserialize(keyUsing = RoadLocationKeyDeserializer.class)
+    public Map<RoadLocation, Long> getTravelDistanceMap() {
         return travelDistanceMap;
     }
 
-    public void setTravelDistanceMap(Map<RoadLocation, Double> travelDistanceMap) {
+    public void setTravelDistanceMap(Map<RoadLocation, Long> travelDistanceMap) {
         this.travelDistanceMap = travelDistanceMap;
     }
 
@@ -44,9 +43,12 @@ public class RoadLocation extends Location {
         if (this == location) {
             return 0L;
         }
-        double distance = travelDistanceMap.get((RoadLocation) location);
-        // Multiplied by 1000 to avoid floating point arithmetic rounding errors
-        return (long) (distance * 1000.0 + 0.5);
+        Long distance = travelDistanceMap.get((RoadLocation) location);
+        if (distance == null) {
+            throw new IllegalStateException("The travelDistanceMap in location (%s) does not contain the key (%s)."
+                    .formatted(this, location));
+        }
+        return (long) (distance * AirLocation.MULTIPLIER);
     }
 
 }

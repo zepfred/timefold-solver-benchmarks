@@ -3,14 +3,13 @@ package ai.timefold.solver.benchmarks.examples.vehiclerouting.persistence;
 import java.io.IOException;
 import java.math.BigInteger;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-import ai.timefold.solver.benchmarks.examples.common.app.CommonApp;
 import ai.timefold.solver.benchmarks.examples.common.persistence.AbstractTxtSolutionImporter;
-import ai.timefold.solver.benchmarks.examples.common.persistence.SolutionConverter;
-import ai.timefold.solver.benchmarks.examples.vehiclerouting.app.VehicleRoutingApp;
 import ai.timefold.solver.benchmarks.examples.vehiclerouting.domain.Customer;
 import ai.timefold.solver.benchmarks.examples.vehiclerouting.domain.Depot;
 import ai.timefold.solver.benchmarks.examples.vehiclerouting.domain.Vehicle;
@@ -19,28 +18,12 @@ import ai.timefold.solver.benchmarks.examples.vehiclerouting.domain.location.Air
 import ai.timefold.solver.benchmarks.examples.vehiclerouting.domain.location.DistanceType;
 import ai.timefold.solver.benchmarks.examples.vehiclerouting.domain.location.Location;
 import ai.timefold.solver.benchmarks.examples.vehiclerouting.domain.location.RoadLocation;
-import ai.timefold.solver.benchmarks.examples.vehiclerouting.domain.location.segmented.HubSegmentLocation;
-import ai.timefold.solver.benchmarks.examples.vehiclerouting.domain.location.segmented.RoadSegmentLocation;
 import ai.timefold.solver.benchmarks.examples.vehiclerouting.domain.timewindowed.TimeWindowedCustomer;
 import ai.timefold.solver.benchmarks.examples.vehiclerouting.domain.timewindowed.TimeWindowedDepot;
 import ai.timefold.solver.benchmarks.examples.vehiclerouting.domain.timewindowed.TimeWindowedVehicleRoutingSolution;
 
 public class VehicleRoutingImporter extends
         AbstractTxtSolutionImporter<VehicleRoutingSolution> {
-
-    public static void main(String[] args) {
-        SolutionConverter<VehicleRoutingSolution> converter =
-                SolutionConverter.createImportConverter(
-                        VehicleRoutingApp.DATA_DIR_NAME, new VehicleRoutingImporter(), new VehicleRoutingSolutionFileIO());
-        converter.convert("vrpweb/basic/air/A-n33-k6.vrp", "cvrp-32customers.json");
-        converter.convert("vrpweb/basic/air/A-n55-k9.vrp", "cvrp-54customers.json");
-        converter.convert("vrpweb/basic/air/F-n72-k4.vrp", "cvrp-72customers.json");
-        converter.convert("vrpweb/timewindowed/air/Solomon_025_C101.vrp", "cvrptw-25customers.json");
-        converter.convert("vrpweb/timewindowed/air/Solomon_100_R101.vrp", "cvrptw-100customers-A.json");
-        converter.convert("vrpweb/timewindowed/air/Solomon_100_R201.vrp", "cvrptw-100customers-B.json");
-        converter.convert("vrpweb/timewindowed/air/Homberger_0400_R1_4_1.vrp", "cvrptw-400customers.json");
-        converter.convert("vrpweb/basic/road-unknown/bays-n29-k5.vrp", "road-cvrp-29customers.json");
-    }
 
     @Override
     public String getInputFileSuffix() {
@@ -70,23 +53,12 @@ public class VehicleRoutingImporter extends
                 throws IOException {
             String firstLine = readStringValue();
             if (firstLine.matches("\\s*NAME\\s*:.*")) {
-                // Might be replaced by TimeWindowedVehicleRoutingSolution later on
                 solution = new VehicleRoutingSolution();
                 solution.setName(removePrefixSuffixFromLine(firstLine, "\\s*NAME\\s*:", ""));
                 readVrpWebFormat();
-            } else if (splitBySpacesOrTabs(firstLine).length == 3) {
-                timewindowed = false;
-                solution = new VehicleRoutingSolution();
-                solution.setName(CommonApp.getBaseFileName(inputFile));
-                String[] tokens = splitBySpacesOrTabs(firstLine, 3);
-                customerListSize = Integer.parseInt(tokens[0]);
-                vehicleListSize = Integer.parseInt(tokens[1]);
-                capacity = Integer.parseInt(tokens[2]);
-                readCourseraFormat();
             } else {
                 timewindowed = true;
-                solution =
-                        new TimeWindowedVehicleRoutingSolution();
+                solution = new TimeWindowedVehicleRoutingSolution();
                 solution.setName(firstLine);
                 readTimeWindowedFormat();
             }
@@ -107,83 +79,153 @@ public class VehicleRoutingImporter extends
         // ************************************************************************
 
         public void readVrpWebFormat() throws IOException {
-            readVrpWebHeaders();
-            readVrpWebLocationList();
+            var datasetType = readVrpWebHeaders();
+            if (datasetType.lowerDiagRequired) {
+                if (datasetType.doublePrecisionRequired) {
+                    throw new UnsupportedOperationException(); // Haven't seen this in the datasets.
+                }
+                readLowerRowVrpWebLocationList();
+            } else {
+                readFullVrpWebLocationList(datasetType.doublePrecisionRequired());
+            }
             readVrpWebCustomerList();
             readVrpWebDepotList();
             createVrpWebVehicleList();
             readConstantLine("EOF");
         }
 
-        private void readVrpWebHeaders() throws IOException {
-            skipOptionalConstantLines("COMMENT *:.*");
+        private DatasetType readVrpWebHeaders() throws IOException {
+            boolean doublePrecisionRequired = doublePrecisionRequired();
             String vrpType = readStringValue("TYPE *:");
-            switch (vrpType) {
-                case "CVRP":
-                    timewindowed = false;
-                    break;
-                case "CVRPTW":
-                    timewindowed = true;
-                    Long solutionId = solution.getId();
-                    String solutionName = solution.getName();
-                    solution = new TimeWindowedVehicleRoutingSolution(solutionId);
-                    solution.setName(solutionName);
-                    break;
-                default:
-                    throw new IllegalArgumentException("The vrpType (" + vrpType + ") is not supported.");
+            if (vrpType.equals("CVRP")) {
+                timewindowed = false;
+            } else {
+                throw new IllegalArgumentException("The vrpType (" + vrpType + ") is not supported at this point.");
             }
+            readOptionalConstantLine("COMMENT *:.*");
             customerListSize = readIntegerValue("DIMENSION *:");
             String edgeWeightType = readStringValue("EDGE_WEIGHT_TYPE *:");
+            boolean lowerDiagRequired = false;
             if (edgeWeightType.equalsIgnoreCase("EUC_2D")) {
-                solution.setDistanceType(
-                        DistanceType.AIR_DISTANCE);
+                solution.setDistanceType(DistanceType.AIR_DISTANCE);
             } else if (edgeWeightType.equalsIgnoreCase("EXPLICIT")) {
-                solution.setDistanceType(
-                        DistanceType.ROAD_DISTANCE);
+                solution.setDistanceType(DistanceType.ROAD_DISTANCE);
                 String edgeWeightFormat = readStringValue("EDGE_WEIGHT_FORMAT *:");
-                if (!edgeWeightFormat.equalsIgnoreCase("FULL_MATRIX")) {
+                if (!edgeWeightFormat.equalsIgnoreCase("LOWER_ROW")) {
                     throw new IllegalArgumentException("The edgeWeightFormat (" + edgeWeightFormat + ") is not supported.");
                 }
-            } else if (edgeWeightType.equalsIgnoreCase("SEGMENTED_EXPLICIT")) {
-                solution.setDistanceType(
-                        DistanceType.SEGMENTED_ROAD_DISTANCE);
-                String edgeWeightFormat = readStringValue("EDGE_WEIGHT_FORMAT *:");
-                if (!edgeWeightFormat.equalsIgnoreCase("HUB_AND_NEARBY_MATRIX")) {
-                    throw new IllegalArgumentException("The edgeWeightFormat (" + edgeWeightFormat + ") is not supported.");
-                }
+                lowerDiagRequired = true;
+                readOptionalConstantLine("DISPLAY_DATA_TYPE *:.*");
             } else {
                 throw new IllegalArgumentException("The edgeWeightType (" + edgeWeightType + ") is not supported.");
             }
             solution.setDistanceUnitOfMeasurement(readOptionalStringValue("EDGE_WEIGHT_UNIT_OF_MEASUREMENT *:", "distance"));
+            readOptionalConstantLine("NODE_COORD_TYPE *:.*");
             capacity = readIntegerValue("CAPACITY *:");
+            return new DatasetType(lowerDiagRequired, doublePrecisionRequired);
         }
 
-        private void readVrpWebLocationList() throws IOException {
-            DistanceType distanceType =
-                    solution.getDistanceType();
-            List<HubSegmentLocation> hubLocationList =
-                    null;
+        private boolean doublePrecisionRequired() throws IOException {
+            try {
+                Double.parseDouble(readStringValue("COMMENT *:"));
+                return true;
+            } catch (NumberFormatException e) {
+                return false;
+            }
+        }
+
+        private record DatasetType(boolean lowerDiagRequired, boolean doublePrecisionRequired) {
+        }
+
+        private void readLowerRowVrpWebLocationList() throws IOException {
             locationMap = new LinkedHashMap<>(customerListSize);
-            if (distanceType == DistanceType.SEGMENTED_ROAD_DISTANCE) {
-                int hubListSize = readIntegerValue("HUBS *:");
-                hubLocationList = new ArrayList<>(hubListSize);
-                readConstantLine("HUB_COORD_SECTION");
-                for (int i = 0; i < hubListSize; i++) {
-                    String line = bufferedReader.readLine();
-                    String[] lineTokens = splitBySpacesOrTabs(line.trim(), 3, 4);
-                    HubSegmentLocation location =
-                            new HubSegmentLocation(
-                                    Long.parseLong(lineTokens[0]),
-                                    Double.parseDouble(lineTokens[1]), Double.parseDouble(lineTokens[2]));
-                    if (lineTokens.length >= 4) {
-                        location.setName(lineTokens[3]);
-                    }
-                    hubLocationList.add(location);
-                    locationMap.put(location.getId(), location);
+            setDistancesFromLowerRowMatrix(locationMap, customerListSize);
+            solution.setLocationList(new ArrayList<>(locationMap.values()));
+        }
+
+        private void setDistancesFromLowerRowMatrix(Map<Long, Location> locationMap, int locationListSize) throws IOException {
+            Map<LocationPair, Long> distanceMap = new HashMap<>();
+            String[][] lineTokens = readLowerRowMatrix(locationListSize);
+            for (int locationA = 1; locationA <= lineTokens.length; locationA++) {
+                var positionA = locationA - 1;
+                for (int locationB = 0; locationB < locationA; locationB++) {
+                    distanceMap.put(new LocationPair(locationA, locationB),
+                            Long.parseLong(lineTokens[positionA][locationB]));
                 }
             }
-            List<Location> customerLocationList =
-                    new ArrayList<>(customerListSize);
+            setDistancesSymmetrical(locationMap, locationListSize, distanceMap);
+        }
+
+        private void setDistancesSymmetrical(Map<Long, Location> locationMap, int locationListSize,
+                Map<LocationPair, Long> distanceMap) {
+            if (locationMap.isEmpty()) {
+                for (int i = 1; i <= locationListSize; i++) { // The datasets indexes customers from 1.
+                    RoadLocation roadLocation = new RoadLocation(i);
+                    roadLocation.setTravelDistanceMap(new LinkedHashMap<>());
+                    locationMap.put(roadLocation.getId(), roadLocation);
+                }
+            }
+            locationMap.forEach((id, location) -> {
+                var roadLocation = (RoadLocation) location;
+                distanceMap.forEach((locationPair, distance) -> {
+                    // Locations are indexed from 1, but the locationMap is indexed from 0.
+                    if (locationPair.locationA + 1 == roadLocation.getId()) {
+                        RoadLocation otherLocation = (RoadLocation) locationMap.get(locationPair.locationB + 1);
+                        roadLocation.getTravelDistanceMap().put(otherLocation, distance);
+                        otherLocation.getTravelDistanceMap().put(roadLocation, distance);
+                    }
+                });
+            });
+        }
+
+        private String[][] readLowerRowMatrix(int expectedLocations) throws IOException {
+            List<String> tokens = readRowMatrix(expectedLocations);
+            // Split array into chunks of expectedLocations
+            String[][] tokenArray = new String[expectedLocations - 1][];
+            List<String> unprocessedTokens = tokens;
+            int expectedTokenCount = 1;
+            for (int i = 0; i < expectedLocations - 1; i++) {
+                tokenArray[i] = unprocessedTokens.subList(0, expectedTokenCount).toArray(new String[0]);
+                unprocessedTokens = unprocessedTokens.subList(expectedTokenCount, unprocessedTokens.size());
+                expectedTokenCount = expectedTokenCount + 1;
+            }
+            if (!unprocessedTokens.isEmpty()) {
+                throw new IllegalStateException("Not all tokens processed: " + unprocessedTokens);
+            }
+            return tokenArray;
+        }
+
+        private List<String> readRowMatrix(int expectedLocations) throws IOException {
+            int unreadTokens = (int) Math.round(expectedLocations * ((expectedLocations - 1) / 2.0));
+            return readMatrix(unreadTokens);
+        }
+
+        private List<String> readMatrix(int unreadTokens) throws IOException {
+            readConstantLine("EDGE_WEIGHT_SECTION");
+            List<String> tokens = new ArrayList<>(unreadTokens);
+            while (unreadTokens > 0) {
+                String line = bufferedReader.readLine();
+                if (line == null) {
+                    throw new IllegalStateException("Unprocessed tokens: " + unreadTokens);
+                } else if (line.trim().isEmpty()) {
+                    continue;
+                }
+                List<String> lineTokens = Arrays.stream(splitBySpace(line, 1, unreadTokens, true, true))
+                        .peek(t -> {
+                            if (!t.chars().allMatch(Character::isDigit)) {
+                                throw new IllegalStateException("Token is not a number: " + t);
+                            }
+                        }).toList();
+                tokens.addAll(lineTokens);
+                unreadTokens -= lineTokens.size();
+            }
+            return tokens;
+        }
+
+        private void readFullVrpWebLocationList(boolean doublePrecisionRequired) throws IOException {
+            DistanceType distanceType = solution.getDistanceType();
+            locationMap = new LinkedHashMap<>(customerListSize);
+            List<Location> customerLocationList = new ArrayList<>(customerListSize);
             readConstantLine("NODE_COORD_SECTION");
             for (int i = 0; i < customerListSize; i++) {
                 String line = bufferedReader.readLine();
@@ -191,26 +233,10 @@ public class VehicleRoutingImporter extends
                 long id = Long.parseLong(lineTokens[0]);
                 double latitude = Double.parseDouble(lineTokens[1]);
                 double longitude = Double.parseDouble(lineTokens[2]);
-                Location location;
-                switch (distanceType) {
-                    case AIR_DISTANCE:
-                        location = new AirLocation(id,
-                                latitude, longitude);
-                        break;
-                    case ROAD_DISTANCE:
-                        location = new RoadLocation(id,
-                                latitude, longitude);
-                        break;
-                    case SEGMENTED_ROAD_DISTANCE:
-                        location =
-                                new RoadSegmentLocation(
-                                        id, latitude, longitude);
-                        break;
-                    default:
-                        throw new IllegalStateException("The distanceType (" + distanceType
-                                + ") is not implemented.");
-
-                }
+                Location location = switch (distanceType) {
+                    case AIR_DISTANCE -> new AirLocation(id, latitude, longitude, doublePrecisionRequired);
+                    case ROAD_DISTANCE -> new RoadLocation(id, latitude, longitude);
+                };
                 if (lineTokens.length >= 4) {
                     location.setName(lineTokens[3]);
                 }
@@ -220,17 +246,14 @@ public class VehicleRoutingImporter extends
             if (distanceType == DistanceType.ROAD_DISTANCE) {
                 readConstantLine("EDGE_WEIGHT_SECTION");
                 for (int i = 0; i < customerListSize; i++) {
-                    RoadLocation location =
-                            (RoadLocation) customerLocationList
-                                    .get(i);
-                    Map<RoadLocation, Double> travelDistanceMap =
-                            new LinkedHashMap<>(customerListSize);
+                    RoadLocation location = (RoadLocation) customerLocationList.get(i);
+                    Map<RoadLocation, Long> travelDistanceMap = new LinkedHashMap<>(customerListSize);
                     String line = bufferedReader.readLine();
                     String[] lineTokens = splitBySpacesOrTabs(line.trim(), customerListSize);
                     for (int j = 0; j < customerListSize; j++) {
-                        double travelDistance = Double.parseDouble(lineTokens[j]);
+                        long travelDistance = Long.parseLong(lineTokens[j]);
                         if (i == j) {
-                            if (travelDistance != 0.0) {
+                            if (travelDistance != 0) {
                                 throw new IllegalStateException("The travelDistance (" + travelDistance
                                         + ") should be zero.");
                             }
@@ -243,65 +266,13 @@ public class VehicleRoutingImporter extends
                     location.setTravelDistanceMap(travelDistanceMap);
                 }
             }
-            if (distanceType == DistanceType.SEGMENTED_ROAD_DISTANCE) {
-                readConstantLine("SEGMENTED_EDGE_WEIGHT_SECTION");
-                int locationListSize = hubLocationList.size() + customerListSize;
-                for (int i = 0; i < locationListSize; i++) {
-                    String line = bufferedReader.readLine();
-                    String[] lineTokens = splitBySpacesOrTabs(line.trim(), 3, null);
-                    if (lineTokens.length % 2 != 1) {
-                        throw new IllegalArgumentException("Invalid SEGMENTED_EDGE_WEIGHT_SECTION line (" + line + ").");
-                    }
-                    long id = Long.parseLong(lineTokens[0]);
-                    Location location =
-                            locationMap.get(id);
-                    if (location == null) {
-                        throw new IllegalArgumentException(
-                                "The location with id (" + id + ") of line (" + line + ") does not exist.");
-                    }
-                    Map<HubSegmentLocation, Double> hubTravelDistanceMap =
-                            new LinkedHashMap<>(lineTokens.length / 2);
-                    Map<RoadSegmentLocation, Double> nearbyTravelDistanceMap =
-                            new LinkedHashMap<>(lineTokens.length / 2);
-                    for (int j = 1; j < lineTokens.length; j += 2) {
-                        Location otherLocation =
-                                locationMap.get(Long.parseLong(lineTokens[j]));
-                        double travelDistance = Double.parseDouble(lineTokens[j + 1]);
-                        if (otherLocation instanceof HubSegmentLocation segmentLocation) {
-                            hubTravelDistanceMap.put(segmentLocation, travelDistance);
-                        } else {
-                            nearbyTravelDistanceMap.put(
-                                    (RoadSegmentLocation) otherLocation,
-                                    travelDistance);
-                        }
-                    }
-                    if (location instanceof HubSegmentLocation hubSegmentLocation) {
-                        hubSegmentLocation.setHubTravelDistanceMap(hubTravelDistanceMap);
-                        hubSegmentLocation.setNearbyTravelDistanceMap(nearbyTravelDistanceMap);
-                    } else {
-                        RoadSegmentLocation roadSegmentLocation =
-                                (RoadSegmentLocation) location;
-                        roadSegmentLocation.setHubTravelDistanceMap(hubTravelDistanceMap);
-                        roadSegmentLocation.setNearbyTravelDistanceMap(nearbyTravelDistanceMap);
-                    }
-                }
-            }
-            List<Location> locationList;
-            if (distanceType == DistanceType.SEGMENTED_ROAD_DISTANCE) {
-                locationList = new ArrayList<>(hubLocationList.size() + customerListSize);
-                locationList.addAll(hubLocationList);
-                locationList.addAll(customerLocationList);
-            } else {
-                locationList = customerLocationList;
-            }
-            solution.setLocationList(locationList);
+            solution.setLocationList(customerLocationList);
         }
 
         private void readVrpWebCustomerList() throws IOException {
-            readConstantLine("DEMAND_SECTION");
+            readUntilConstantLine("DEMAND_SECTION");
             depotList = new ArrayList<>(customerListSize);
-            List<Customer> customerList =
-                    new ArrayList<>(customerListSize);
+            List<Customer> customerList = new ArrayList<>(customerListSize);
             for (int i = 0; i < customerListSize; i++) {
                 String line = bufferedReader.readLine();
                 String[] lineTokens = splitBySpacesOrTabs(line.trim(), timewindowed ? 5 : 2);
@@ -309,8 +280,7 @@ public class VehicleRoutingImporter extends
                 int demand = Integer.parseInt(lineTokens[1]);
                 // Depots have no demand
                 if (demand == 0) {
-                    Location location =
-                            locationMap.get(id);
+                    Location location = locationMap.get(id);
                     if (location == null) {
                         throw new IllegalArgumentException("The depot with id (" + id
                                 + ") has no location (" + location + ").");
@@ -321,16 +291,13 @@ public class VehicleRoutingImporter extends
                             throw new IllegalArgumentException("The depot with id (" + id
                                     + ") has a serviceDuration (" + serviceDuration + ") that is not 0.");
                         }
-                        depotList.add(
-                                new TimeWindowedDepot(
-                                        id, location, Long.parseLong(lineTokens[2]),
-                                        Long.parseLong(lineTokens[3])));
+                        depotList.add(new TimeWindowedDepot(id, location, Long.parseLong(lineTokens[2]),
+                                Long.parseLong(lineTokens[3])));
                     } else {
                         depotList.add(new Depot(id, location));
                     }
                 } else {
-                    Location location =
-                            locationMap.get(id);
+                    Location location = locationMap.get(id);
                     if (location == null) {
                         throw new IllegalArgumentException("The customer with id (" + id
                                 + ") has no location (" + location + ").");
@@ -385,60 +352,13 @@ public class VehicleRoutingImporter extends
         }
 
         private void createVehicleList() {
-            List<Vehicle> vehicleList =
-                    new ArrayList<>(vehicleListSize);
-            long id = 0;
+            List<Vehicle> vehicleList = new ArrayList<>(vehicleListSize);
             for (int i = 0; i < vehicleListSize; i++) {
                 // Round robin the vehicles to a depot if there are multiple depots
-                Vehicle vehicle =
-                        new Vehicle(i, capacity, depotList.get(i % depotList.size()));
+                Vehicle vehicle = new Vehicle(i, capacity, depotList.get(i % depotList.size()));
                 vehicleList.add(vehicle);
             }
             solution.setVehicleList(vehicleList);
-        }
-
-        // ************************************************************************
-        // CVRP coursera format. See https://class.coursera.org/optimization-001/
-        // ************************************************************************
-
-        public void readCourseraFormat() throws IOException {
-            solution.setDistanceType(
-                    DistanceType.AIR_DISTANCE);
-            solution.setDistanceUnitOfMeasurement("distance");
-            List<Location> locationList =
-                    new ArrayList<>(customerListSize);
-            depotList = new ArrayList<>(1);
-            List<Customer> customerList =
-                    new ArrayList<>(customerListSize);
-            locationMap = new LinkedHashMap<>(customerListSize);
-            for (int i = 0; i < customerListSize; i++) {
-                String line = bufferedReader.readLine();
-                String[] lineTokens = splitBySpacesOrTabs(line.trim(), 3, 4);
-                AirLocation location =
-                        new AirLocation(i,
-                                Double.parseDouble(lineTokens[1]), Double.parseDouble(lineTokens[2]));
-                if (lineTokens.length >= 4) {
-                    location.setName(lineTokens[3]);
-                }
-                locationList.add(location);
-                if (i == 0) {
-                    Depot depot = new Depot(i, location);
-                    depotList.add(depot);
-                } else {
-                    int demand = Integer.parseInt(lineTokens[0]);
-                    // Do not add a customer that has no demand
-                    if (demand != 0) {
-                        // Notice that we leave the PlanningVariable properties on null
-                        Customer customer =
-                                new Customer(i, location, demand);
-                        customerList.add(customer);
-                    }
-                }
-            }
-            solution.setLocationList(locationList);
-            solution.setDepotList(depotList);
-            solution.setCustomerList(customerList);
-            createVehicleList();
         }
 
         // ************************************************************************
@@ -472,19 +392,18 @@ public class VehicleRoutingImporter extends
             int locationListSizeEstimation = 25;
             List<Location> locationList = new ArrayList<>(locationListSizeEstimation);
             depotList = new ArrayList<>(1);
-            TimeWindowedDepot depot = null;
             List<Customer> customerList = new ArrayList<>(locationListSizeEstimation);
             boolean first = true;
             while (line != null && !line.trim().isEmpty()) {
                 String[] lineTokens = splitBySpacesOrTabs(line.trim(), 7);
                 long id = Long.parseLong(lineTokens[0]);
                 AirLocation location =
-                        new AirLocation(id, Double.parseDouble(lineTokens[1]), Double.parseDouble(lineTokens[2]));
+                        new AirLocation(id, Double.parseDouble(lineTokens[1]), Double.parseDouble(lineTokens[2]), true);
                 locationList.add(location);
                 int demand = Integer.parseInt(lineTokens[3]);
-                long minStartTime = Long.parseLong(lineTokens[4]) * 1000L;
-                long maxEndTime = Long.parseLong(lineTokens[5]) * 1000L;
-                long serviceDuration = Long.parseLong(lineTokens[6]) * 1000L;
+                long minStartTime = Math.round(Long.parseLong(lineTokens[4]) * AirLocation.MULTIPLIER);
+                long maxEndTime = Math.round(Long.parseLong(lineTokens[5]) * AirLocation.MULTIPLIER);
+                long serviceDuration = Math.round(Long.parseLong(lineTokens[6]) * AirLocation.MULTIPLIER);
                 if (first) {
                     if (demand != 0) {
                         throw new IllegalArgumentException("The depot with id (" + id
@@ -494,19 +413,10 @@ public class VehicleRoutingImporter extends
                         throw new IllegalArgumentException("The depot with id (" + id
                                 + ") has a serviceDuration (" + serviceDuration + ").");
                     }
-                    depot = new TimeWindowedDepot(id, location, minStartTime, maxEndTime);
+                    TimeWindowedDepot depot = new TimeWindowedDepot(id, location, minStartTime, maxEndTime);
                     depotList.add(depot);
                     first = false;
                 } else {
-                    // Score constraint arrivalAfterMaxEndTimeAtDepot is a built-in hard constraint in VehicleRoutingImporter
-                    long maximumAllowedMaxEndTime = depot.getMaxEndTime()
-                            - serviceDuration - location.getDistanceTo(depot.getLocation());
-                    if (maxEndTime > maximumAllowedMaxEndTime) {
-                        logger.warn("The customer ({})'s maxEndTime ({}) was automatically reduced" +
-                                " to maximumAllowedMaxEndTime ({}) because of the depot's maxEndTime ({}).",
-                                id, maxEndTime, maximumAllowedMaxEndTime, depot.getMaxEndTime());
-                        maxEndTime = maximumAllowedMaxEndTime;
-                    }
                     // Do not add a customer that has no demand
                     if (demand != 0) {
                         // Notice that we leave the PlanningVariable properties on null
@@ -523,6 +433,9 @@ public class VehicleRoutingImporter extends
             customerListSize = locationList.size();
         }
 
+    }
+
+    private record LocationPair(long locationA, long locationB) {
     }
 
 }

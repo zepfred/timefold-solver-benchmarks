@@ -3,6 +3,7 @@ package ai.timefold.solver.benchmarks.examples.vehiclerouting.domain;
 import ai.timefold.solver.benchmarks.examples.common.domain.AbstractPersistable;
 import ai.timefold.solver.benchmarks.examples.common.persistence.jackson.JacksonUniqueIdGenerator;
 import ai.timefold.solver.benchmarks.examples.vehiclerouting.domain.location.Location;
+import ai.timefold.solver.benchmarks.examples.vehiclerouting.domain.location.LocationAware;
 import ai.timefold.solver.benchmarks.examples.vehiclerouting.domain.solver.DepotAngleCustomerDifficultyWeightFactory;
 import ai.timefold.solver.benchmarks.examples.vehiclerouting.domain.timewindowed.TimeWindowedCustomer;
 import ai.timefold.solver.core.api.domain.entity.PlanningEntity;
@@ -97,7 +98,7 @@ public class Customer extends AbstractPersistable implements LocationAware {
                     "This method must not be called when the shadow variables are not initialized yet.");
         }
         if (previousCustomer == null) {
-            return vehicle.getLocation().getDistanceTo(location);
+            return getDistanceToDepot();
         }
         return previousCustomer.getLocation().getDistanceTo(location);
     }

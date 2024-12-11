@@ -3,8 +3,6 @@ package ai.timefold.solver.benchmarks.examples.vehiclerouting.domain.location;
 import ai.timefold.solver.benchmarks.examples.common.domain.AbstractPersistable;
 import ai.timefold.solver.benchmarks.examples.common.persistence.jackson.JacksonUniqueIdGenerator;
 import ai.timefold.solver.benchmarks.examples.vehiclerouting.domain.VehicleRoutingSolution;
-import ai.timefold.solver.benchmarks.examples.vehiclerouting.domain.location.segmented.HubSegmentLocation;
-import ai.timefold.solver.benchmarks.examples.vehiclerouting.domain.location.segmented.RoadSegmentLocation;
 
 import com.fasterxml.jackson.annotation.JsonIdentityInfo;
 import com.fasterxml.jackson.annotation.JsonIgnore;
@@ -15,9 +13,7 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
 @JsonTypeInfo(use = JsonTypeInfo.Id.NAME)
 @JsonSubTypes({
         @JsonSubTypes.Type(value = AirLocation.class, name = "air"),
-        @JsonSubTypes.Type(value = HubSegmentLocation.class, name = "hubSegment"),
         @JsonSubTypes.Type(value = RoadLocation.class, name = "road"),
-        @JsonSubTypes.Type(value = RoadSegmentLocation.class, name = "roadSegment")
 })
 @JsonIgnoreProperties(ignoreUnknown = true)
 @JsonIdentityInfo(generator = JacksonUniqueIdGenerator.class)
@@ -27,15 +23,15 @@ public abstract class Location extends AbstractPersistable {
     protected double latitude;
     protected double longitude;
 
-    public Location() {
+    protected Location() {
     }
 
-    public Location(long id) {
+    protected Location(long id) {
         super(id);
     }
 
-    public Location(long id, double latitude, double longitude) {
-        super(id);
+    protected Location(long id, double latitude, double longitude) {
+        this(id);
         this.latitude = latitude;
         this.longitude = longitude;
     }
@@ -84,8 +80,7 @@ public abstract class Location extends AbstractPersistable {
         // Euclidean distance (Pythagorean theorem) - not correct when the surface is a sphere
         double latitudeDifference = location.latitude - latitude;
         double longitudeDifference = location.longitude - longitude;
-        return Math.sqrt(
-                (latitudeDifference * latitudeDifference) + (longitudeDifference * longitudeDifference));
+        return Math.sqrt((latitudeDifference * latitudeDifference) + (longitudeDifference * longitudeDifference));
     }
 
     /**
@@ -100,6 +95,10 @@ public abstract class Location extends AbstractPersistable {
         double latitudeDifference = location.latitude - latitude;
         double longitudeDifference = location.longitude - longitude;
         return Math.atan2(latitudeDifference, longitudeDifference);
+    }
+
+    protected static long adjust(double distance) {
+        return (long) (distance + 0.5); // +0.5 to avoid floating point rounding errors
     }
 
     @Override

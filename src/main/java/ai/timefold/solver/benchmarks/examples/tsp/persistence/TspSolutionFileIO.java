@@ -30,7 +30,7 @@ public final class TspSolutionFileIO extends AbstractJsonSolutionFileIO<TspSolut
         var roadLocationList = tspSolution.getLocationList().stream()
                 .filter(location -> location instanceof RoadLocation)
                 .map(location -> (RoadLocation) location)
-                .collect(Collectors.toList());
+                .toList();
         var locationsById = roadLocationList.stream()
                 .collect(Collectors.toMap(RoadLocation::getId, Function.identity()));
         /*
