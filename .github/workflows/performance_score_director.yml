@@ -59,7 +59,7 @@ jobs:
       - name: Setup JDK and Maven
         uses: actions/setup-java@v4
         with:
-          java-version: 17 # Always build with the least recent supported JDK.
+          java-version: 21 # Always build with the least recent supported JDK.
           distribution: 'temurin'
           cache: 'maven'
           server-id: 'timefold-solver-enterprise'
