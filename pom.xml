@@ -56,6 +56,11 @@
             <scope>provided</scope>
         </dependency>
         <dependency>
+            <groupId>tools.profiler</groupId>
+            <artifactId>async-profiler-converter</artifactId>
+            <version>${version.tools.profiler}</version>
+        </dependency>
+        <dependency>
             <groupId>ai.timefold.solver.enterprise</groupId>
             <artifactId>timefold-solver-enterprise-core</artifactId>
         </dependency>
